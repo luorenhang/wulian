@@ -2,6 +2,7 @@ package com.plc.mqtt;
 
 import com.plc.mqtt.util.S7PlcReader;
 import com.plc.mqtt.util.DBUtil;
+import com.plc.mqtt.util.MqttPublisher;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.eclipse.paho.client.mqttv3.*;
@@ -25,6 +26,11 @@ public class S71200MqttGateway {
     private static final String TB_DEVICE_TOKEN = "xu2bKPhPSdcLQhZ5nPIC";
     private static final String TB_TELEMETRY_TOPIC = "v1/devices/me/telemetry";
 
+    private static final String PUBLIC_MQTT_BROKER = "tcp://47.97.154.65:1883";
+    private static final String PUBLIC_MQTT_USERNAME = "niit";
+    private static final String PUBLIC_MQTT_PASSWORD = "iiotcsc2413";
+    private static final String PLC_DATA_TOPIC_PREFIX = "plc/data/";
+
     private S7PlcReader plcReader;
     private Timer readTimer;
     private volatile boolean isReconnecting = false;
@@ -32,6 +38,8 @@ public class S71200MqttGateway {
     private MqttClient mqttClient;
     private Gson gson;
     private volatile boolean isMqttReconnecting = false;
+
+    private MqttPublisher publicMqttPublisher;
 
     private static class PlcPoint {
         String name;
@@ -91,6 +99,7 @@ public class S71200MqttGateway {
         }
 
         initMqttClient();
+        initPublicMqttPublisher();
 
         startReadingTask();
         logger.info("Gateway started successfully");
@@ -99,10 +108,19 @@ public class S71200MqttGateway {
     public void stop() {
         stopReadingTask();
         disconnectMqttClient();
+        if (publicMqttPublisher != null) {
+            publicMqttPublisher.disconnect();
+        }
         if (plcReader != null) {
             plcReader.disconnect();
         }
         logger.info("Gateway stopped");
+    }
+
+    private void initPublicMqttPublisher() {
+        publicMqttPublisher = new MqttPublisher(PUBLIC_MQTT_BROKER, null, PUBLIC_MQTT_USERNAME, PUBLIC_MQTT_PASSWORD);
+        boolean connected = publicMqttPublisher.connect();
+        logger.info("Connected to public MQTT broker: " + connected);
     }
 
     private void initDatabasePoints() {
@@ -336,9 +354,24 @@ public class S71200MqttGateway {
 
             mqttClient.publish(TB_TELEMETRY_TOPIC, message);
             logger.info("Sent telemetry to ThingsBoard: " + json);
+            
+            sendToPublicBroker(pointName, value);
         } catch (MqttException e) {
             logger.log(Level.SEVERE, "Failed to send telemetry: " + e.getMessage(), e);
             attemptMqttReconnect();
+        }
+    }
+
+    private void sendToPublicBroker(String pointName, boolean value) {
+        if (publicMqttPublisher != null) {
+            String topic = PLC_DATA_TOPIC_PREFIX + pointName;
+            String payload = "{\"" + pointName + "\": " + value + "}";
+            boolean result = publicMqttPublisher.publish(topic, payload);
+            if (result) {
+                logger.info("Sent PLC data to public broker: " + topic + " -> " + payload);
+            } else {
+                logger.warning("Failed to send PLC data to public broker");
+            }
         }
     }
 
