@@ -11,33 +11,43 @@ import java.time.LocalDateTime;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+/**
+ * 数据库工具类
+ * 使用HikariCP连接池管理PostgreSQL数据库连接
+ * 提供PLC点位数据的持久化操作
+ */
 public class DBUtil {
 
     private static final Logger logger = Logger.getLogger(DBUtil.class.getName());
 
+    // ========== 数据库连接配置 ==========
     private static final String DB_URL = "jdbc:postgresql://localhost:5432/iiot";
     private static final String DB_USER = "postgres";
     private static final String DB_PASSWORD = "1234";
 
-    private static final String INSERT_POINT_SQL = 
+    // ========== SQL语句常量 ==========
+    private static final String INSERT_POINT_SQL =
         "INSERT INTO plc_points (address, name, created_at) " +
         "VALUES (?, ?, ?) ON CONFLICT (address) DO NOTHING";
 
-    private static final String UPDATE_CURRENT_STATUS_SQL = 
+    private static final String UPDATE_CURRENT_STATUS_SQL =
         "UPDATE plc_current_status SET status = ?, update_time = NOW() WHERE point_id = ?";
 
-    private static final String INSERT_STATUS_LOG_SQL = 
+    private static final String INSERT_STATUS_LOG_SQL =                              // 插入状态变更日志
         "INSERT INTO plc_status_log (point_id, old_status, new_status, change_time) " +
         "VALUES (?, ?, ?, NOW())";
 
-    private static final String GET_POINT_ID_SQL = 
+    private static final String GET_POINT_ID_SQL =                                   // 查询点位ID
         "SELECT id FROM plc_points WHERE address = ?";
 
-    private static final String GET_CURRENT_STATUS_SQL = 
+    private static final String GET_CURRENT_STATUS_SQL =                             // 查询当前状态
         "SELECT status FROM plc_current_status WHERE point_id = ?";
 
-    private static HikariDataSource dataSource;
+    private static HikariDataSource dataSource;  // HikariCP连接池实例
 
+    /**
+     * 静态初始化块：初始化数据库连接池
+     */
     static {
         try {
             HikariConfig config = new HikariConfig();
@@ -46,11 +56,12 @@ public class DBUtil {
             config.setPassword(DB_PASSWORD);
             config.setDriverClassName("org.postgresql.Driver");
             
-            config.setMaximumPoolSize(5);
-            config.setMinimumIdle(2);
-            config.setConnectionTimeout(30000);
-            config.setIdleTimeout(600000);
-            config.setMaxLifetime(1800000);
+            // 连接池配置
+            config.setMaximumPoolSize(5);      // 最大连接数
+            config.setMinimumIdle(2);          // 最小空闲连接数
+            config.setConnectionTimeout(30000); // 连接超时时间（毫秒）
+            config.setIdleTimeout(600000);     // 空闲连接超时时间（毫秒）
+            config.setMaxLifetime(1800000);    // 连接最大生命周期（毫秒）
             
             dataSource = new HikariDataSource(config);
             logger.info("HikariCP connection pool initialized successfully");
@@ -59,6 +70,11 @@ public class DBUtil {
         }
     }
 
+    /**
+     * 从连接池获取数据库连接
+     * 
+     * @return 数据库连接对象，获取失败返回null
+     */
     public static Connection getConnection() {
         if (dataSource == null) {
             logger.severe("Connection pool not initialized");
@@ -75,6 +91,12 @@ public class DBUtil {
         }
     }
 
+    /**
+     * 关闭数据库连接
+     * 注意：使用连接池时，close()方法实际上是将连接归还到池中，而非真正关闭
+     * 
+     * @param connection 要关闭的连接对象
+     */
     public static void closeConnection(Connection connection) {
         if (connection != null) {
             try {
@@ -86,6 +108,14 @@ public class DBUtil {
         }
     }
 
+    /**
+     * 初始化PLC点位到数据库
+     * 如果点位已存在则不做任何操作（ON CONFLICT DO NOTHING）
+     * 
+     * @param pointName 点位名称（如I0.2）
+     * @param description 点位描述
+     * @return 操作成功返回true，失败返回false
+     */
     public static boolean initPoint(String pointName, String description) {
         Connection connection = null;
         PreparedStatement preparedStatement = null;
@@ -126,6 +156,12 @@ public class DBUtil {
         }
     }
 
+    /**
+     * 根据点位名称获取数据库中的点位ID
+     * 
+     * @param pointName 点位名称
+     * @return 点位ID，未找到返回-1
+     */
     public static int getPointId(String pointName) {
         Connection connection = null;
         PreparedStatement preparedStatement = null;
@@ -172,6 +208,12 @@ public class DBUtil {
         }
     }
 
+    /**
+     * 获取点位的当前状态
+     * 
+     * @param pointId 点位ID
+     * @return 当前状态值，未找到返回null
+     */
     public static Boolean getCurrentStatus(int pointId) {
         Connection connection = null;
         PreparedStatement preparedStatement = null;
@@ -218,6 +260,13 @@ public class DBUtil {
         }
     }
 
+    /**
+     * 更新点位的当前状态
+     * 
+     * @param pointId 点位ID
+     * @param status 新的状态值
+     * @return 更新成功返回true，失败返回false
+     */
     public static boolean updateCurrentStatus(int pointId, boolean status) {
         Connection connection = null;
         PreparedStatement preparedStatement = null;
@@ -258,6 +307,14 @@ public class DBUtil {
         }
     }
 
+    /**
+     * 插入状态变更日志
+     * 
+     * @param pointId 点位ID
+     * @param oldStatus 变更前的状态
+     * @param newStatus 变更后的状态
+     * @return 插入成功返回true，失败返回false
+     */
     public static boolean insertStatusLog(int pointId, boolean oldStatus, boolean newStatus) {
         Connection connection = null;
         PreparedStatement preparedStatement = null;
